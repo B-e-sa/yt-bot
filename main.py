@@ -46,10 +46,28 @@ async def pre_flight(ctx: Context) -> str:
     return "free"
 
 
+commands = [
+    ["toca", "toco um link do youtube"],
+    ["pula", "pulo a música atual"],
+    ["parou", "paro a musica (usa de novo para retornar)"],
+    ["tchau", "vo imbora"],
+    ["fila", "mostro as musicas na fila"]]
+
+
+@bot.command()
+async def ajuda(ctx: Context):
+    commands_str = "\n"
+
+    for command in commands:
+        commands_str += command[0] + ": " + command[1] + "\n"
+
+    await ctx.send("Prefixo: dj" + commands_str)
+
+
 @bot.event
 async def on_voice_state_update(member, _, after):
     if member == bot.user and after.channel == None:
-        dj.reset()
+        await dj.reset()
 
 
 @bot.event
@@ -76,7 +94,10 @@ async def tchau(ctx: Context):
 @bot.command()
 async def parou(ctx: Context):
     if await pre_flight(ctx) == "same_channel":
-        yt_handler.stop(dj.voice_client)
+        if yt_handler.playing:
+            yt_handler.stop()
+        else:
+            yt_handler.resume()
 
 
 @bot.command()
@@ -96,6 +117,20 @@ async def announce_track(ctx: Context, title, duration, user):
 
 
 @bot.command()
+async def fila(ctx: Context):
+    queue_str = ""
+
+    if len(yt_handler.queue) > 0:
+        queue = yt_handler.queue
+        for i in range(len(yt_handler.queue)):
+            queue_str += f"{i}. " + queue[i][0] + " == " + queue[i][3] + "\n"
+    else:
+        queue_str = "Fila vazia amor"
+
+    await ctx.send(queue_str)
+
+
+@bot.command()
 async def toca(ctx: Context, arg: str):
     if not yt_handler.leave_callback:
         async def announce_leave(message: str):
@@ -112,13 +147,13 @@ async def toca(ctx: Context, arg: str):
     if bot_status == "free":
         await ctx.send("Só um estante")
         await dj.join_channel(ctx.author.voice.channel)
-        info = yt_handler.play(arg, dj.voice_client)
+        info = await yt_handler.play(arg, dj.voice_client)
         await announce_track(ctx, info["title"], info["duration"], ctx.author.name)
 
     if bot_status == "same_channel":
         if not yt_handler.playing:
             await ctx.send("Só um estante")
-            info = yt_handler.play(arg, dj.voice_client)
+            info = await yt_handler.play(arg, dj.voice_client)
             await announce_track(ctx, info["title"], info["duration"], ctx.author.name)
 
         else:
@@ -132,7 +167,7 @@ async def toca(ctx: Context, arg: str):
                 yt_handler.message_callback = message_callback
 
             await ctx.send("Tá bom, tá bom, calma")
-            track = yt_handler.enqueue(arg, ctx.author.name)
+            track = await yt_handler.enqueue(arg, ctx.author.name)
             await ctx.send("Butando " + track[0] + " na fila," + " posicão " + str(track[1] + 1))
 
 

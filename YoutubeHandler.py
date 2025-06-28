@@ -40,16 +40,22 @@ class YoutubeHandler:
         else:
             return time + " minutos"
 
-    def play(self, url: str, voice_client: VoiceClient):
+    async def extract_url(self, url):
         with YoutubeDL(self.config) as ydl:
-            info = ydl.extract_info(url, download=False)
+            info = await asyncio.to_thread(ydl.extract_info, url, download=False)
             audio_url = info['url']
             source = FFmpegPCMAudio(audio_url, **self.ffmpeg_config)
-            self.voice_client = voice_client
-            voice_client.play(source, after=self.next)
-            self.playing = True
+            return [info, source]
 
-        return {"title": info["fulltitle"], "duration": self.format_time(info["duration_string"])}
+    async def play(self, url: str, voice_client: VoiceClient):
+        self.voice_client = voice_client
+        self.playing = True
+
+        track = await self.extract_url(url)
+
+        voice_client.play(track[1], after=self.next)
+
+        return {"title": track[0]["fulltitle"], "duration": self.format_time(track[0]["duration_string"])}
 
     def next(self, _err):
         if self.skipping:
@@ -67,18 +73,21 @@ class YoutubeHandler:
 
     def stop(self):
         self.playing = False
-        self.voice_client.stop()
-        asyncio.run_coroutine_threadsafe(self.leave_callback("Acabo"), self.loop)
+        self.voice_client.pause()
+        
+    def resume(self):
+        self.playing = True
+        self.voice_client.resume()
 
     async def reset(self):
         self.playing = False
         self.voice_client.stop()
         self.voice_client.cleanup()
         await self.voice_client.disconnect()
-        asyncio.run_coroutine_threadsafe(self.leave_callback("Xauu"), self.loop)
+        asyncio.run_coroutine_threadsafe(
+            self.leave_callback("Xauu"), self.loop)
         self.voice_client = None
         self.queue = []
-
 
     def skip(self):
         self.skipping = True
@@ -91,16 +100,13 @@ class YoutubeHandler:
             self.loop
         )
 
-    def enqueue(self, url, user):
-        with YoutubeDL(self.config) as ydl:
-            info = ydl.extract_info(url, download=False)
-            audio_url = info['url']
-            source = FFmpegPCMAudio(audio_url, **self.ffmpeg_config)
+    async def enqueue(self, url, user):
+        track = await self.extract_url(url)
 
         self.queue.append([
-            info["fulltitle"],
-            self.format_time(info["duration_string"]),
-            source,
+            track[0]["fulltitle"],
+            self.format_time(track[0]["duration_string"]),
+            track[1],
             user])
 
-        return [info["fulltitle"], len(self.queue)]
+        return [track[0]["fulltitle"], len(self.queue)]
